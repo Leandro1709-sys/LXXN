@@ -74,6 +74,7 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold', 
     letterSpacing: 2, 
     marginBottom: 2, 
+    marginTop: 4,
     
     // --- CAMBIOS PARA CENTRAR ---
     width: '100%',          // Ocupa todo el ancho disponible

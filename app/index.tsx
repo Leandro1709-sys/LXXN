@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  View, Text, TouchableOpacity, StatusBar
+  View, Text, TouchableOpacity, StatusBar, Dimensions
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { 
@@ -13,21 +13,20 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as SplashScreen from 'expo-splash-screen';
 
-// IMPORTS MODULARIZADOS
+// IMPORTS
 import { 
   PAD_SIZE, DOT_SIZE, MIN_POS, MAX_POS, width 
 } from './src/constants/Layout';
 import { styles } from './src/styles/AppStyles';
-import { HeaderLogo } from './src/components/HeaderLogo';
+// import { HeaderLogo } from './src/components/HeaderLogo'; // REEMPLAZADO POR HEADER INLINE DE 4 SECTORES
 import { ManualModal } from './src/components/ManualModal';
 import { LxxnLoadingScreen } from './src/components/LxxnLoadingScreen';
-import { LedCell } from './src/components/LedCell'; // 
-import { OpticalTheremin } from './src/components/OpticalTheremin'; // 
+import { LedCell } from './src/components/LedCell'; 
+import { OpticalTheremin } from './src/components/OpticalTheremin';
+
 SplashScreen.preventAutoHideAsync();
 
 // --- CONFIGURACIÓN DE SLOTS ---
-// Nota: Si tus assets están en root, usa require('../assets...') si index está en src, 
-// o require('./assets...') si index está en root. Ajusta según tu estructura real.
 const SLOTS_CONFIG = [
   { id: 's1', label: 'CICCIO', type: 'inst', baseVolume: 1.0, file: require('../assets/sounds/instrumentos/ciccio2.mp3') }, 
   { id: 's2', label: 'BRASS',  type: 'inst', baseVolume: 1.0, file: require('../assets/sounds/instrumentos/brass.mp3') },
@@ -44,17 +43,19 @@ type SlotState = 'EMPTY' | 'RECORDING' | 'IDLE' | 'ACTIVE' | 'HOLD';
 function KaossPad() {
   const [status, setStatus] = useState('RDY');
   const [modalVisible, setModalVisible] = useState(false);
-  const [opticalActive, setOpticalActive] = useState(false);
   const [slotStates, setSlotStates] = useState<Record<string, SlotState>>({ u1: 'EMPTY', r1: 'EMPTY' });
   const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
   const [slotVolumes, setSlotVolumes] = useState<Record<string, number>>({
       s1: 1.0, s2: 1.0, s3: 1.0, b1: 1.0, b2: 1.0, b3: 1.0, u1: 1.0, r1: 1.0
   });
 
+  // --- ESTADOS V2 ---
+  const [opticalActive, setOpticalActive] = useState(false);
+  const [visualLux, setVisualLux] = useState(0);
+
   const lastTapRef = useRef<Record<string, number>>({});
   const soundPool = useRef<Record<string, Audio.Sound>>({});
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const activeSoundRef = useRef<Audio.Sound | null>(null);
 
   const posX = useSharedValue(PAD_SIZE / 2);
   const posY = useSharedValue(PAD_SIZE / 2);
@@ -81,7 +82,7 @@ function KaossPad() {
     return () => { Object.values(soundPool.current).forEach(s => s.unloadAsync()); };
   }, []);
 
-  // ... LOGICA DE AUDIO ...
+  // --- LOGICA DEL SISTEMA ---
   const loadUserFile = async () => {
     try {
         const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
@@ -172,32 +173,23 @@ function KaossPad() {
     }
   };
 
-// --- CONTROL DE AUDIO POR LUZ (THEREMIN) ---
+  // --- LOGICA TEREMÍN V2 ---
   const handleLightUpdate = async (value: number) => {
-    // 1. Verificar si hay un slot seleccionado
+    setVisualLux(value);
     if (!activeSlotId) return;
-
-    // 2. Buscar el sonido real en tu "Pool" de sonidos
-    const sound = soundPool.current[activeSlotId];
-
-    // 3. Si el sonido existe, le cambiamos la velocidad
-    if (sound) {
+    const soundObject = soundPool.current[activeSlotId];
+    if (soundObject) {
       try {
-        // value viene de 0.0 (Oscuro) a 1.0 (Luz)
-        // Mapeamos: 0.1 (Muy lento) a 2.0 (Muy rápido)
         const pitch = 0.1 + (value * 1.9); 
-
-        // Aplicamos el cambio
-        await sound.setRateAsync(pitch, false);
-        
-      } catch (error) {
-        // Silenciamos errores menores de async
-      }
+        await soundObject.setRateAsync(pitch, false);
+      } catch (error) {}
     }
   };
 
   const handleSlotPress = async (slotId: string) => {
     const currentState = slotStates[slotId];
+    
+    // Manejo especial para Grabación y Usuario
     if (slotId === 'r1') {
         if (currentState === 'EMPTY') { startRecording(); return; }
         if (currentState === 'RECORDING') { stopRecording(); return; }
@@ -208,16 +200,23 @@ function KaossPad() {
     const lastTime = lastTapRef.current[slotId] || 0;
     const timeDiff = now - lastTime;
     lastTapRef.current[slotId] = now;
+
+    // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+    // Buscamos la configuración para obtener el nombre real (Label)
+    const config = SLOTS_CONFIG.find(s => s.id === slotId);
+    const labelToShow = config ? config.label : slotId.toUpperCase();
+    // ---------------------------------
+
     const sound = soundPool.current[slotId];
     if (!sound) return;
-    const config = SLOTS_CONFIG.find(s => s.id === slotId) || { baseVolume: 1.0 };
     const currentVol = slotVolumes[slotId] ?? 1.0;
+    const baseVol = config ? config.baseVolume : 1.0;
 
     if (timeDiff < 300) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (currentState === 'HOLD') {
         await sound.stopAsync();
-        await sound.setStatusAsync({ rate: 1.0, volume: config.baseVolume * currentVol, shouldCorrectPitch: false });
+        await sound.setStatusAsync({ rate: 1.0, volume: baseVol * currentVol, shouldCorrectPitch: false });
         setSlotStates(prev => ({ ...prev, [slotId]: 'IDLE' }));
         if (activeSlotId === slotId) setActiveSlotId(null);
         setStatus('STP');
@@ -238,7 +237,8 @@ function KaossPad() {
         if (newState[slotId] !== 'HOLD') newState[slotId] = 'ACTIVE';
         return newState;
       });
-      setStatus(slotId.toUpperCase());
+      // Mostramos el nombre real en el display
+      setStatus(labelToShow);
     }
   };
 
@@ -246,23 +246,19 @@ function KaossPad() {
     if (!activeSlotId) return;
     const sound = soundPool.current[activeSlotId];
     if (!sound) return;
-
     const config = SLOTS_CONFIG.find(s => s.id === activeSlotId) || { baseVolume: 1.0 };
     const travelDistance = PAD_SIZE - DOT_SIZE;
     const clampedX = Math.max(MIN_POS, Math.min(x, MAX_POS));
     const clampedY = Math.max(MIN_POS, Math.min(y, MAX_POS));
     const percentX = (clampedX - MIN_POS) / travelDistance; 
     const percentY = (clampedY - MIN_POS) / travelDistance; 
-
     const octaveFactor = 0.5 + (percentX * 2.0); 
     const bendFactor = 0.2 - (percentY * 0.4);   
     const finalRate = Math.max(0.1, Math.min(3.0, octaveFactor + bendFactor));
     const currentVol = slotVolumes[activeSlotId] ?? 1.0;
-
     try { await sound.setStatusAsync({ rate: finalRate, volume: config.baseVolume * currentVol, shouldCorrectPitch: false }); } catch (e) {}
   };
 
- 
   const onStart = (x: number, y: number) => {
     isPressed.value = true;
     const safeX = Math.max(MIN_POS, Math.min(x, MAX_POS));
@@ -323,31 +319,6 @@ function KaossPad() {
     else if (state === 'EMPTY') { btnColor = '#111'; borderColor = '#6e0303ff'; textColor = '#e70606ff'; label = slot.id === 'r1' ? "MIC/REC" : "LOAD +"; } 
     else if (state === 'IDLE') { btnColor = '#333'; borderColor = '#444'; textColor = '#888'; if (slot.id === 'r1') label = "MIC 1"; }
 
-    // --- CONTROL DE AUDIO POR LUZ (THEREMIN) ---
-  const handleLightUpdate = async (value: number) => {
-    // Si hay un sonido sonando (guardado en la referencia)
-    if (activeSoundRef.current) {
-      try {
-        // value viene de 0.0 (Oscuro) a 1.0 (Luz)
-        
-        // Mapeamos: 
-        // Poca luz = 0.1 (Muy lento/Grave)
-        // Mucha luz = 2.0 (Muy rápido/Agudo)
-        // Normal = 1.0
-        
-        // Fórmula mágica:
-        const pitch = 0.1 + (value * 1.9); 
-
-        // Enviamos la orden al motor de audio
-        // setRateAsync(velocidad, correcciónDeTono)
-        // false = Cambia el tono (efecto cinta/vinilo)
-        await activeSoundRef.current.setRateAsync(pitch, false);
-        
-      } catch (error) {
-        console.log("Error cambiando pitch:", error);
-      }
-    }
-  };
     return (
       <View key={slot.id} style={styles.btnWrapper}>
         <TouchableOpacity 
@@ -370,33 +341,122 @@ function KaossPad() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
         <StatusBar barStyle="light-content" />
+        
         <View style={styles.chassis}>
-          <HeaderLogo status={status} onOpenManual={() => setModalVisible(true)} />
-          <View style={styles.padBezel}>
-            <GestureDetector gesture={gesture}>
-              <View style={styles.padSurface}>  
-                {Array.from({length:64}).map((_,i)=><LedCell key={i} row={Math.floor(i/8)} col={i%8}/>)}
-                <View style={styles.gridH} /><View style={styles.gridV} />
-                <Animated.View style={[styles.cursorBox, cursorContainerStyle]}>
-                    <Animated.View style={[styles.cursorLineV, cursorCrossStyle]} />
-                    <Animated.View style={[styles.cursorLineH, cursorCrossStyle]} />
-                </Animated.View>
+          
+          {/* ================================================================ */}
+          {/* HEADER MANUAL DE 4 SECTORES (Estilo Original Preservado)         */}
+          {/* ================================================================ */}
+          <View style={{ 
+              flexDirection: 'row', 
+              justifyContent: 'space-between',
+              alignItems: 'center', 
+              width: '100%',
+              paddingHorizontal: 15,
+              paddingVertical: 10,
+          }}>
+              
+              {/* 1. SECTOR DISPLAY (Status) - Usa estilos originales */}
+              <View style={[styles.btnWrapper, { width: 80 }]}>
+                <View style={[styles.slotBtn, { borderColor: '#f00', backgroundColor: '#111' }]}>
+                  <Text style={[styles.btnLabel, { color: '#f00' }]}>{status}</Text>
+                </View>
               </View>
-            </GestureDetector>
+
+              {/* 2. SECTOR TEREMÍN (Nuevo, insertado al medio) */}
+              <TouchableOpacity 
+                  onPress={() => setOpticalActive(!opticalActive)}
+                  style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      borderWidth: 1,
+                      borderColor: opticalActive ? '#ff0000' : '#444',
+                      backgroundColor: opticalActive ? 'rgba(255,0,0,0.2)' : '#111',
+                      paddingVertical: 6, paddingHorizontal: 10,
+                      borderRadius: 4,
+                  }}
+              >
+                  <View style={{
+                      width: 6, height: 6, borderRadius: 3, 
+                      backgroundColor: opticalActive ? '#ff0000' : '#333',
+                      marginRight: 6
+                  }}/>
+                  <Text style={{ 
+                      color: opticalActive ? '#ff0000' : '#666', 
+                      fontSize: 10, fontWeight: 'bold', letterSpacing: 1 
+                  }}>
+                      TEREMÍN
+                  </Text>
+              </TouchableOpacity>
+
+              {/* 3. SECTOR LOGO */}
+           <View style={{ alignItems: 'center' }}>
+                  <Text style={{ 
+                      color: '#ff0000', 
+                      fontSize: 24, 
+                      fontWeight: 'bold', 
+                      letterSpacing: 4,
+                      // Efecto de sombra/resplandor rojo intenso
+                      textShadowColor: 'rgba(235, 240, 236, 0.7)', 
+                      textShadowOffset: { width: 0, height: 0 },
+                      textShadowRadius: 15 
+                  }}>
+                      LXXN
+                  </Text>
+                  <Text style={{ 
+                      color: '#ffffffff', 
+                      fontSize: 10, 
+                      fontWeight: 'bold',
+                      letterSpacing: 1,
+                      opacity: 0.7,
+                      marginTop: -2 // Ajuste fino para pegarlo al título
+                  }}>
+                      v 2.0
+                  </Text>
+              </View>
+
+              {/* 4. SECTOR +INFO (Manual) */}
+              <TouchableOpacity onPress={() => setModalVisible(true)}>
+                  <Text style={{ color: '#f50606ff', fontSize: 12, fontWeight: 'bold' }}>+INFO</Text>
+              </TouchableOpacity>
+
+          </View>
+          {/* ================================================================ */}
+
+
+          {/* BARRA DE LUMEN OPCIONAL (Se muestra si está activo el Teremín) */}
+          <View style={{ width: '100%', height: 6, marginBottom: 15, paddingHorizontal: 20, justifyContent: 'center' }}>
+            {opticalActive && (
+              <View style={{ width: '100%', height: 4, backgroundColor: '#100', borderRadius: 2, overflow: 'hidden' }}>
+                <View style={{ width: `${visualLux * 100}%`, height: '100%', backgroundColor: '#f00', opacity: 0.8 }} />
+              </View>
+            )}
+          </View>
+
+          {/* PAD ORIGINAL (Sin cambios) */}
+          <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center', height: PAD_SIZE }}>
+            <View style={styles.padBezel}>
+                <GestureDetector gesture={gesture}>
+                <View style={styles.padSurface}>  
+                    {Array.from({length:64}).map((_,i)=><LedCell key={i} row={Math.floor(i/8)} col={i%8}/>)}
+                    <View style={styles.gridH} /><View style={styles.gridV} />
+                    <Animated.View style={[styles.cursorBox, cursorContainerStyle]}>
+                        <Animated.View style={[styles.cursorLineV, cursorCrossStyle]} />
+                        <Animated.View style={[styles.cursorLineH, cursorCrossStyle]} />
+                    </Animated.View>
+                </View>
+                </GestureDetector>
+            </View>
           </View>
           
           <View style={styles.faderContainer}>
              <Text style={styles.faderLabel}>
                 {activeSlotId 
-                  ? `${SLOTS_CONFIG.find(s => s.id === activeSlotId)?.label} VOL: ${Math.round((slotVolumes[activeSlotId] || 1)*100)}%` 
+                  ? `${SLOTS_CONFIG.find(s => s.id === activeSlotId)?.label} VOL` 
                   : "SELECT CH"
                 }
              </Text>
              <View style={styles.faderTrack} onTouchStart={onFaderTouch} onTouchMove={onFaderTouch}>
                 <View style={[styles.faderLevel, { width: activeSlotId ? `${(slotVolumes[activeSlotId] || 0) * 100}%` : '0%', backgroundColor: activeSlotId ? '#ff0000' : '#333' }]} />
-                <View style={{position:'absolute', left:'25%', height:'100%', width:1, backgroundColor:'#000'}}/>
-                <View style={{position:'absolute', left:'50%', height:'100%', width:1, backgroundColor:'#000'}}/>
-                <View style={{position:'absolute', left:'75%', height:'100%', width:1, backgroundColor:'#000'}}/>
              </View>
           </View>
 
@@ -414,35 +474,15 @@ function KaossPad() {
                     </TouchableOpacity>
                 </View>
                 {renderSlotButton(SLOTS_CONFIG.find(s => s.id === 'r1')!)}
-                {/* --- NUEVO BOTÓN OPTICAL --- */}
-          <TouchableOpacity 
-              style={[styles.slotBtn, { 
-                  width: '100%', 
-                  marginTop: 10, 
-                  height: 35,
-                  borderColor: '#0f0', 
-                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 10
-              }]} 
-              onPress={() => setOpticalActive(true)}
-          >
-              <Text style={{color:'#0f0', fontSize: 14}}>👁️</Text>
-              <Text style={[styles.btnLabel, { color: '#0f0', letterSpacing: 2, fontSize: 10 }]}>
-                  INITIALIZE OPTICAL SENSOR
-              </Text>
-          </TouchableOpacity>
             </View>
           </View>
         </View>
+        
         <ManualModal visible={modalVisible} onClose={() => setModalVisible(false)} />
-      <OpticalTheremin 
-          active={opticalActive} 
-          onClose={() => setOpticalActive(false)} 
-          onLightUpdate={handleLightUpdate}  // <--- ESTA ES LA CLAVE QUE FALTABA
-      />
+        <View style={{ height: 1, width: 1, opacity: 0, overflow: 'hidden' }}>
+             <OpticalTheremin active={opticalActive} onClose={() => setOpticalActive(false)} onLightUpdate={handleLightUpdate} />
+        </View>
+
       </View>
     </GestureHandlerRootView>
   );
