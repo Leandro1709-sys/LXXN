@@ -4,10 +4,10 @@
     "slug": "lxxn-pad",
     "version": "2.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo2.png",
+    "icon": "./assets/lxxn-icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/logo2.png",
+      "image": "./assets/lxxn-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -20,7 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo2.png",
+        "foregroundImage": "./assets/lxxn-icon.png",
         "backgroundColor": "#000000"
       },
       "package": "com.teletubi1709.lxxnpad",
