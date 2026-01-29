@@ -18,7 +18,6 @@ import {
   PAD_SIZE, DOT_SIZE, MIN_POS, MAX_POS, width 
 } from './src/constants/Layout';
 import { styles } from './src/styles/AppStyles';
-// import { HeaderLogo } from './src/components/HeaderLogo'; // REEMPLAZADO POR HEADER INLINE DE 4 SECTORES
 import { ManualModal } from './src/components/ManualModal';
 import { LxxnLoadingScreen } from './src/components/LxxnLoadingScreen';
 import { LedCell } from './src/components/LedCell'; 
@@ -49,7 +48,7 @@ function KaossPad() {
       s1: 1.0, s2: 1.0, s3: 1.0, b1: 1.0, b2: 1.0, b3: 1.0, u1: 1.0, r1: 1.0
   });
 
-  // --- ESTADOS V2 ---
+  // --- ESTADOS V2 (THEREMIN) ---
   const [opticalActive, setOpticalActive] = useState(false);
   const [visualLux, setVisualLux] = useState(0);
 
@@ -82,7 +81,20 @@ function KaossPad() {
     return () => { Object.values(soundPool.current).forEach(s => s.unloadAsync()); };
   }, []);
 
-  // --- LOGICA DEL SISTEMA ---
+  // --- LÓGICA DE COLOR DEL PAD ---
+  const getPadColor = () => {
+    if (!activeSlotId) return '#333333'; // GRIS OSCURO (Idle)
+    
+    const state = slotStates[activeSlotId];
+    if (state === 'ACTIVE') return '#00e5ff'; // CIAN (Seleccionado/Sonando)
+    if (state === 'HOLD') return '#ff0000';   // ROJO (Loop Lock)
+    if (state === 'RECORDING') return '#ff0000'; // ROJO (Grabando)
+    
+    return '#333333';
+  };
+  const currentPadColor = getPadColor();
+
+  // --- LOGICA AUDIO ---
   const loadUserFile = async () => {
     try {
         const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
@@ -92,7 +104,7 @@ function KaossPad() {
             const { sound } = await Audio.Sound.createAsync({ uri: result.assets[0].uri }, { shouldPlay: false, isLooping: true, volume: 1.0 });
             soundPool.current['u1'] = sound;
             setSlotStates(prev => ({ ...prev, u1: 'IDLE' })); 
-            setStatus('USR');
+            setStatus('USER');
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
     } catch (e) { setStatus('ERR'); }
@@ -130,7 +142,7 @@ function KaossPad() {
         const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false, isLooping: true, volume: 1.0 });
         soundPool.current['r1'] = sound;
         setSlotStates(prev => ({ ...prev, r1: 'IDLE' })); 
-        setStatus('MIC');
+        setStatus('MIC'); 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (err) { setStatus('ERR'); }
@@ -173,7 +185,7 @@ function KaossPad() {
     }
   };
 
-  // --- LOGICA TEREMÍN V2 ---
+  // --- LOGICA THEREMIN ---
   const handleLightUpdate = async (value: number) => {
     setVisualLux(value);
     if (!activeSlotId) return;
@@ -189,7 +201,10 @@ function KaossPad() {
   const handleSlotPress = async (slotId: string) => {
     const currentState = slotStates[slotId];
     
-    // Manejo especial para Grabación y Usuario
+    // Config para Label
+    const config = SLOTS_CONFIG.find(s => s.id === slotId);
+    const labelToShow = config ? config.label : slotId.toUpperCase();
+
     if (slotId === 'r1') {
         if (currentState === 'EMPTY') { startRecording(); return; }
         if (currentState === 'RECORDING') { stopRecording(); return; }
@@ -200,13 +215,7 @@ function KaossPad() {
     const lastTime = lastTapRef.current[slotId] || 0;
     const timeDiff = now - lastTime;
     lastTapRef.current[slotId] = now;
-
-    // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
-    // Buscamos la configuración para obtener el nombre real (Label)
-    const config = SLOTS_CONFIG.find(s => s.id === slotId);
-    const labelToShow = config ? config.label : slotId.toUpperCase();
-    // ---------------------------------
-
+    
     const sound = soundPool.current[slotId];
     if (!sound) return;
     const currentVol = slotVolumes[slotId] ?? 1.0;
@@ -237,27 +246,56 @@ function KaossPad() {
         if (newState[slotId] !== 'HOLD') newState[slotId] = 'ACTIVE';
         return newState;
       });
-      // Mostramos el nombre real en el display
+      // Muestra el nombre en el display
       setStatus(labelToShow);
     }
   };
 
-  const updateAudio = async (x: number, y: number) => {
+const updateAudio = async (x: number, y: number) => {
     if (!activeSlotId) return;
     const sound = soundPool.current[activeSlotId];
     if (!sound) return;
+    
     const config = SLOTS_CONFIG.find(s => s.id === activeSlotId) || { baseVolume: 1.0 };
+    
+    // Calculamos distancias y porcentajes (0.0 a 1.0)
     const travelDistance = PAD_SIZE - DOT_SIZE;
     const clampedX = Math.max(MIN_POS, Math.min(x, MAX_POS));
     const clampedY = Math.max(MIN_POS, Math.min(y, MAX_POS));
+    
     const percentX = (clampedX - MIN_POS) / travelDistance; 
     const percentY = (clampedY - MIN_POS) / travelDistance; 
-    const octaveFactor = 0.5 + (percentX * 2.0); 
-    const bendFactor = 0.2 - (percentY * 0.4);   
+    
+    // --- CORRECCIÓN MATEMÁTICA ---
+    
+    // 1. FACTOR X (Velocidad Base):
+    // Queremos que en el CENTRO (0.5) el valor sea 1.0
+    // Fórmula: 0.5 + percentX
+    // Izquierda (0.0) -> 0.5 (Mitad de velocidad)
+    // Centro (0.5)    -> 1.0 (Original)
+    // Derecha (1.0)   -> 1.5 (Acelerado)
+    const octaveFactor = 0.5 + percentX; 
+
+    // 2. FACTOR Y (Bend/Desafinación Sutil):
+    // Queremos que en el CENTRO (0.5) el efecto sea 0
+    // Arriba (0.0) -> +0.1
+    // Centro (0.5) -> 0.0
+    // Abajo (1.0)  -> -0.1
+    const bendFactor = 0.1 - (percentY * 0.2);   
+    
+    // Sumamos: 1.0 (Base) + 0.0 (Bend) = 1.0 (Perfecto Original)
     const finalRate = Math.max(0.1, Math.min(3.0, octaveFactor + bendFactor));
+    
     const currentVol = slotVolumes[activeSlotId] ?? 1.0;
-    try { await sound.setStatusAsync({ rate: finalRate, volume: config.baseVolume * currentVol, shouldCorrectPitch: false }); } catch (e) {}
-  };
+    
+    try { 
+        await sound.setStatusAsync({ 
+            rate: finalRate, 
+            volume: config.baseVolume * currentVol, 
+            shouldCorrectPitch: false 
+        }); 
+    } catch (e) {}
+  }; 
 
   const onStart = (x: number, y: number) => {
     isPressed.value = true;
@@ -342,43 +380,56 @@ function KaossPad() {
       <View style={styles.container}>
         <StatusBar barStyle="light-content" />
         
-        <View style={styles.chassis}>
+       <View style={styles.chassis}>
           
-          {/* ================================================================ */}
-          {/* HEADER MANUAL DE 4 SECTORES (Estilo Original Preservado)         */}
-          {/* ================================================================ */}
+          {/* ========================================================== */}
+          {/* HEADER ALINEADO (GRID 4 ELEMENTOS)                         */}
+          {/* ========================================================== */}
           <View style={{ 
               flexDirection: 'row', 
-              justifyContent: 'space-between',
+              justifyContent: 'space-between', // Distribuye equitativamente
               alignItems: 'center', 
               width: '100%',
-              paddingHorizontal: 15,
-              paddingVertical: 10,
+              paddingHorizontal: 15, // Un poco menos de borde para ganar espacio central
+              paddingTop: 20,        // Más aire arriba
+              paddingBottom: 10
           }}>
               
-              {/* 1. SECTOR DISPLAY (Status) - Usa estilos originales */}
-              <View style={[styles.btnWrapper, { width: 80 }]}>
-                <View style={[styles.slotBtn, { borderColor: '#f00', backgroundColor: '#111' }]}>
-                  <Text style={[styles.btnLabel, { color: '#f00' }]}>{status}</Text>
-                </View>
+              {/* 1. SECTOR DISPLAY (Ancho fijo 60) */}
+              <View style={[styles.btnWrapper, { width: 60, height: 36 }]}>
+                  <View style={[styles.slotBtn, { 
+                      backgroundColor: '#111', 
+                      borderColor: '#444',
+                      justifyContent: 'center', 
+                      alignItems: 'center',
+                      height: '100%' // Asegura que llene el wrapper
+                  }]}>
+                      <Text style={{ color: '#f00', fontSize: 10, fontWeight: 'bold' }}>
+                          {status}
+                      </Text>
+                  </View>
               </View>
 
-              {/* 2. SECTOR TEREMÍN (Nuevo, insertado al medio) */}
+              {/* 2. SECTOR TEREMÍN (Botón estilizado igual que los otros) */}
               <TouchableOpacity 
                   onPress={() => setOpticalActive(!opticalActive)}
                   style={{
-                      flexDirection: 'row', alignItems: 'center',
+                      height: 36, // Altura idéntica a los otros
+                      flexDirection: 'row', 
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       borderWidth: 1,
-                      borderColor: opticalActive ? '#ff0000' : '#444',
+                      borderColor: opticalActive ? '#ff0000' : '#444', // Borde activo/inactivo
                       backgroundColor: opticalActive ? 'rgba(255,0,0,0.2)' : '#111',
-                      paddingVertical: 6, paddingHorizontal: 10,
                       borderRadius: 4,
+                      paddingHorizontal: 10,
+                      minWidth: 90 // Un poco más ancho para que quepa el texto
                   }}
               >
                   <View style={{
                       width: 6, height: 6, borderRadius: 3, 
                       backgroundColor: opticalActive ? '#ff0000' : '#333',
-                      marginRight: 6
+                      marginRight: 8
                   }}/>
                   <Text style={{ 
                       color: opticalActive ? '#ff0000' : '#666', 
@@ -388,57 +439,85 @@ function KaossPad() {
                   </Text>
               </TouchableOpacity>
 
-              {/* 3. SECTOR LOGO */}
-           <View style={{ alignItems: 'center' }}>
+              {/* 3. SECTOR LOGO (Verticalmente centrado) */}
+              <View style={{ 
+                  backgroundColor: '#fff', 
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderRadius: 2,
+                  height: 36, // Misma altura visual
+                  minWidth: 50
+              }}>
                   <Text style={{ 
-                      color: '#ff0000', 
-                      fontSize: 24, 
-                      fontWeight: 'bold', 
-                      letterSpacing: 4,
-                      // Efecto de sombra/resplandor rojo intenso
-                      textShadowColor: 'rgba(235, 240, 236, 0.7)', 
-                      textShadowOffset: { width: 0, height: 0 },
-                      textShadowRadius: 15 
+                      color: '#f00', fontSize: 18, fontWeight: '900', letterSpacing: 1, lineHeight: 18, includeFontPadding: false
                   }}>
                       LXXN
                   </Text>
                   <Text style={{ 
-                      color: '#ffffffff', 
-                      fontSize: 10, 
-                      fontWeight: 'bold',
-                      letterSpacing: 1,
-                      opacity: 0.7,
-                      marginTop: -2 // Ajuste fino para pegarlo al título
+                      color: '#000', fontSize: 8, fontWeight: 'bold', letterSpacing: 0.5, marginTop: 0
                   }}>
                       v 2.0
                   </Text>
               </View>
 
-              {/* 4. SECTOR +INFO (Manual) */}
-              <TouchableOpacity onPress={() => setModalVisible(true)}>
-                  <Text style={{ color: '#f50606ff', fontSize: 12, fontWeight: 'bold' }}>+INFO</Text>
-              </TouchableOpacity>
+              {/* 4. SECTOR +INFO (Ancho fijo 60) */}
+              <View style={[styles.btnWrapper, { width: 60, height: 36 }]}>
+                  <TouchableOpacity 
+                      onPress={() => setModalVisible(true)}
+                      style={[styles.slotBtn, { 
+                          backgroundColor: '#111', 
+                          borderColor: '#555',     
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          height: '100%'
+                      }]}
+                  >
+                      <Text style={[styles.btnLabel, { color: '#ccc', fontSize: 10 }]}>+INFO</Text>
+                  </TouchableOpacity>
+              </View>
 
           </View>
-          {/* ================================================================ */}
 
-
-          {/* BARRA DE LUMEN OPCIONAL (Se muestra si está activo el Teremín) */}
-          <View style={{ width: '100%', height: 6, marginBottom: 15, paddingHorizontal: 20, justifyContent: 'center' }}>
-            {opticalActive && (
+          {/* ========================================================== */}
+          {/* BARRA DE LUMEN + ESPACIADOR (Separa el Header del Pad)     */}
+          {/* ========================================================== */}
+          <View style={{ 
+              width: '100%', 
+              height: 20, // Altura fija: Reserva espacio aunque esté apagado
+              justifyContent: 'center',
+              paddingHorizontal: 20,
+              marginBottom: 10, // Margen extra para separar del PAD
+              marginTop: 5
+          }}>
+            {opticalActive ? (
               <View style={{ width: '100%', height: 4, backgroundColor: '#100', borderRadius: 2, overflow: 'hidden' }}>
                 <View style={{ width: `${visualLux * 100}%`, height: '100%', backgroundColor: '#f00', opacity: 0.8 }} />
               </View>
+            ) : (
+               /* Línea decorativa muy sutil cuando está apagado para mantener estructura */
+               <View style={{ width: '100%', height: 1, backgroundColor: '#222' }} />
             )}
           </View>
 
-          {/* PAD ORIGINAL (Sin cambios) */}
+          {/* 3. ZONA PRINCIPAL (PAD CENTRADO) - SIN CAMBIOS */}
           <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center', height: PAD_SIZE }}>
             <View style={styles.padBezel}>
                 <GestureDetector gesture={gesture}>
-                <View style={styles.padSurface}>  
-                    {Array.from({length:64}).map((_,i)=><LedCell key={i} row={Math.floor(i/8)} col={i%8}/>)}
+                <View style={[styles.padSurface, { flexDirection: 'row', flexWrap: 'wrap' }]}>  
+                    
+                    {Array.from({length:64}).map((_,i)=>(
+                        <LedCell 
+                            key={i} 
+                            row={Math.floor(i/8)} 
+                            col={i%8} 
+                            color={currentPadColor} 
+                        />
+                    ))}
+                    
                     <View style={styles.gridH} /><View style={styles.gridV} />
+                    
                     <Animated.View style={[styles.cursorBox, cursorContainerStyle]}>
                         <Animated.View style={[styles.cursorLineV, cursorCrossStyle]} />
                         <Animated.View style={[styles.cursorLineH, cursorCrossStyle]} />
@@ -448,6 +527,7 @@ function KaossPad() {
             </View>
           </View>
           
+          {/* CONTROLES INFERIORES - SIN CAMBIOS */}
           <View style={styles.faderContainer}>
              <Text style={styles.faderLabel}>
                 {activeSlotId 
