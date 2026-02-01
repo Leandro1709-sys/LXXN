@@ -205,11 +205,29 @@ function KaossPad() {
     const config = SLOTS_CONFIG.find(s => s.id === slotId);
     const labelToShow = config ? config.label : slotId.toUpperCase();
 
+    // 1. Manejo de Grabación y Usuario (Sin cambios)
     if (slotId === 'r1') {
         if (currentState === 'EMPTY') { startRecording(); return; }
         if (currentState === 'RECORDING') { stopRecording(); return; }
     }
     if (slotId === 'u1' && currentState === 'EMPTY') { loadUserFile(); return; }
+
+    // 2. LÓGICA DE HERENCIA DE VOLUMEN (-10%)
+    let targetVol = slotVolumes[slotId] ?? 1.0;
+    
+    if (activeSlotId && activeSlotId !== slotId) {
+        // Obtenemos el volumen del que estaba sonando
+        const previousVol = slotVolumes[activeSlotId] ?? 1.0;
+        
+        // Le restamos un 10% (0.1), asegurando que nunca sea menor a 0.0
+        targetVol = Math.max(0.0, previousVol - 0.1);
+        
+        // Actualizamos el estado para que el Fader visual baje ese escalón
+        setSlotVolumes(prev => ({
+            ...prev,
+            [slotId]: targetVol
+        }));
+    }
 
     const now = Date.now();
     const lastTime = lastTapRef.current[slotId] || 0;
@@ -218,13 +236,20 @@ function KaossPad() {
     
     const sound = soundPool.current[slotId];
     if (!sound) return;
-    const currentVol = slotVolumes[slotId] ?? 1.0;
+
+    // Aplicamos el volumen calculado (Base * Fader Ajustado)
+    const currentVol = targetVol; 
     const baseVol = config ? config.baseVolume : 1.0;
+
+    try {
+        await sound.setVolumeAsync(currentVol * baseVol);
+    } catch (e) {}
 
     if (timeDiff < 300) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (currentState === 'HOLD') {
         await sound.stopAsync();
+        // Reset a velocidad normal al parar
         await sound.setStatusAsync({ rate: 1.0, volume: baseVol * currentVol, shouldCorrectPitch: false });
         setSlotStates(prev => ({ ...prev, [slotId]: 'IDLE' }));
         if (activeSlotId === slotId) setActiveSlotId(null);
@@ -250,7 +275,6 @@ function KaossPad() {
       setStatus(labelToShow);
     }
   };
-
 const updateAudio = async (x: number, y: number) => {
     if (!activeSlotId) return;
     const sound = soundPool.current[activeSlotId];
