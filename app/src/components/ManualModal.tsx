@@ -61,40 +61,39 @@ export const ManualModal = ({ visible, onClose }: ManualModalProps) => {
                             onContentSizeChange={(w, h) => setContentHeight(h)} 
                             onLayout={(e) => setVisibleSize(e.nativeEvent.layout.height)}
                         >
-                            <Text style={modalStyles.text}>
-                                LXXN STATION V2 [STABLE]{"\n"}
-                                --------------------------------{"\n"}
-                                1. XY PAD CONTROL (PERFORMANCE){"\n"}
-                                • Eje X (Horiz): OCTAVAS (Izq=Grave / Der=Agudo){"\n"}
-                                • Eje Y (Vert): PITCH BEND (Afinación Fina){"\n"}
-                                Combinar ambos para crear melodías glitch.{"\n"}{"\n"}
-                                
-                                2. MEZCLA Y CONTROL (MIXER){"\n"}
-                                • FADER INFERIOR: Controla el volumen INDEPENDIENTE del canal seleccionado.{"\n"}
-                                • KILL ALL: Silencio total y reseteo de pitch.{"\n"}{"\n"}
-                                
-                                3. SLOTS DE FÁBRICA (INST/BASES){"\n"}
-                                • UN TAP (Azul): Disparo único (One Shot).{"\n"}
-                                • DOBLE TAP (Rojo): Modo Loop Infinito (Latch).{"\n"}{"\n"}
-                                
-                                4. MÓDULOS DE EXPANSIÓN (MIC & USER){"\n"}
-                                Estos botones son "Híbridos". Cambian según su estado:{"\n"}{"\n"}
+                           <Text style={modalStyles.text}>
+    LXXN STATION V2 [STABLE] - "NOISE PROTOCOL"{"\n"}
+    ------------------------------------------------{"\n"}
+    1. THEREMIN ÓPTICO (cámara frontal){"\n"}
+    • SENSOR LUZ: Controla la frecuencia según el entorno.{"\n"}
+    • LÓGICA: Oscuridad = Tonos graves / Luz = Tonos Agudos.{"\n"}
+    • MONITOR: Barra roja en el Header indica entrada de lumen.{"\n"}{"\n"}
 
-                                [ ESTADO 1: VACÍO ]{"\n"}
-                                • USER: Un toque abre tus archivos. Carga MP3/WAV.{"\n"}
-                                • MIC: Un toque inicia la grabación (Luz Roja).{"\n"}
-                                       Otro toque finaliza y guarda el sample.{"\n"}{"\n"}
+    2. SISTEMA DE ESTADOS Y COLORES (PADS){"\n"}
+    • GRIS: Slot inactivo o vacío.{"\n"}
+    • CIAN (Un toque): Seleccionado. El instrumento suena en el XY Pad.{"\n"}
+    • ROJO (Doble toque): Modo HOLD. El bucle queda activo.{"\n"}
+    • LONG PRESS: Borrar sample de la memoria (Mic/User).{"\n"}{"\n"}
 
-                                [ ESTADO 2: INSTRUMENTO ]{"\n"}
-                                • Una vez cargado el audio, el botón se vuelve de color.{"\n"}
-                                • AHORA ES UN SINTETIZADOR: Úsalo en el XY PAD.{"\n"}
-                                • Aplica Pitch, Efectos y Loops como cualquier otro.{"\n"}{"\n"}
+    3. XY PAD CONTROL (PERFORMANCE){"\n"}
+    • Eje X (Horiz): OCTAVAS (Frecuencia base).{"\n"}
+    • Eje Y (Vert): PITCH BEND (Afinación sutil).{"\n"}
+    • CENTRO: Velocidad 1.0 (Audio original).{"\n"}{"\n"}
 
-                                [ RESET / BORRAR ]{"\n"}
-                                • ¿No te gustó la grabación?{"\n"}
-                                • MANTENER PRESIONADO (Long Press) el botón para{"\n"}
-                                  eliminar el audio de la memoria y liberar el slot.
-                            </Text>
+    4. MEZCLA INTELIGENTE (MIXER){"\n"}
+    • FADER: Control de volumen del canal activo.{"\n"}
+    • HERENCIA: Cada nuevo disparo resta 10% de volumen al anterior{"\n"}
+      para evitar saturación en la red sonora.{"\n"}
+    • KILL ALL: Silencio total y reseteo de pánico.{"\n"}{"\n"}
+
+    5. CAPTURA DE ENTORNO (MIC & USER){"\n"}
+    • MIC: Un toque inicia grabación (Rojo). Otro toque guarda.{"\n"}
+    • USER: Carga archivos locales (MP3/WAV).{"\n"}
+    • Una vez cargado, el botón cambia de color y se vuelve{"\n"}
+      un sintetizador controlable en el Pad.{"\n"}{"\n"}
+
+    "No es una app, es una red de trabajo comunitario."
+</Text>
                         </Animated.ScrollView>
                         
                         <View style={modalStyles.scrollTrack}>

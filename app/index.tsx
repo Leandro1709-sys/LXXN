@@ -459,7 +459,7 @@ const updateAudio = async (x: number, y: number) => {
                       color: opticalActive ? '#ff0000' : '#666', 
                       fontSize: 10, fontWeight: 'bold', letterSpacing: 1 
                   }}>
-                      TEREMÍN
+                      THEREMIN
                   </Text>
               </TouchableOpacity>
 
